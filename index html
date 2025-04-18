@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+   <html lang="fa" dir="rtl">
+   <head>
+       <meta charset="UTF-8">
+       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+       <title>تحلیل‌گر کانفیگ V2Ray</title>
+       <style>
+           body {
+               font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+               line-height: 1.6;
+               margin: 0;
+               padding: 20px;
+               background-color: #f5f5f5;
+               color: #333;
+           }
+           .container {
+               max-width: 800px;
+               margin: 0 auto;
+               background: white;
+               padding: 20px;
+               border-radius: 8px;
+               box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+           }
+           h1 {
+               color: #2c3e50;
+               text-align: center;
+           }
+           textarea {
+               width: 100%;
+               padding: 10px;
+               border: 1px solid #ddd;
+               border-radius: 4px;
+               min-height: 100px;
+               font-family: monospace;
+           }
+           button {
+               background-color: #3498db;
+               color: white;
+               border: none;
+               padding: 10px 15px;
+               border-radius: 4px;
+               cursor: pointer;
+               font-size: 16px;
+               margin-top: 10px;
+           }
+           button:hover {
+               background-color: #2980b9;
+           }
+           #result {
+               margin-top: 20px;
+               padding: 15px;
+               border-radius: 4px;
+               background-color: #f8f9fa;
+               border: 1px solid #eee;
+           }
+           .info-item {
+               margin-bottom: 8px;
+               padding: 8px;
+               border-bottom: 1px solid #eee;
+           }
+       </style>
+   </head>
+   <body>
+       <div class="container">
+           <h1>📡 تحلیل‌گر کانفیگ V2Ray/VLESS</h1>
+           <p>لینک یا کانفیگ خود را در کادر زیر وارد کنید:</p>
+           
+           <textarea id="configInput" placeholder="vmess://... یا vless://..."></textarea>
+           <button onclick="analyzeConfig()">تحلیل کانفیگ</button>
+           
+           <div id="result" style="display: none;">
+               <h2>🔍 نتایج تحلیل</h2>
+               <div id="resultContent"></div>
+           </div>
+       </div>
+
+       <script>
+           function analyzeConfig() {
+               const input = document.getElementById('configInput').value.trim();
+               const resultDiv = document.getElementById('result');
+               const contentDiv = document.getElementById('resultContent');
+               
+               if (!input) {
+                   alert('لطفاً یک لینک معتبر وارد کنید');
+                   return;
+               }
+               
+               // پاک کردن نتایج قبلی
+               contentDiv.innerHTML = '';
+               resultDiv.style.display = 'none';
+               
+               try {
+                   let configData = {};
+                   
+                   if (input.startsWith('vmess://')) {
+                       configData = parseVmess(input);
+                   } else if (input.startsWith('vless://')) {
+                       configData = parseVless(input);
+                   } else {
+                       throw new Error('فرمت لینک پشتیبانی نمی‌شود');
+                   }
+                   
+                   // نمایش نتایج
+                   displayResults(configData);
+                   resultDiv.style.display = 'block';
+                   
+               } catch (error) {
+                   contentDiv.innerHTML = `<div class="error">❌ خطا در پردازش لینک: ${error.message}</div>`;
+                   resultDiv.style.display = 'block';
+               }
+           }
+           
+           function parseVmess(vmessLink) {
+               try {
+                   const encodedPart = vmessLink.substring(8);
+                   const padded = encodedPart + '='.repeat((4 - encodedPart.length % 4) % 4);
+                   const decoded = atob(padded);
+                   const config = JSON.parse(decoded);
+                   
+                   return {
+                       type: 'VMess',
+                       server: config.add || 'ناشناخته',
+                       port: config.port || 'ناشناخته',
+                       id: config.id || 'ناشناخته',
+                       remark: config.ps || '',
+                       totalData: parseDataStr(config.total),
+                       remainingData: parseDataStr(config.remain),
+                       expiry: parseTimestamp(config.expiry)
+                   };
+               } catch (e) {
+                   throw new Error('خطا در پردازش لینک VMess');
+               }
+           }
+           
+           function parseVless(vlessLink) {
+               try {
+                   const url = new URL(vlessLink);
+                   const netloc = url.host.split('@');
+                   const params = new URLSearchParams(url.search);
+                   
+                   return {
+                       type: 'VLESS',
+                       server: netloc[1].split(':')[0] || 'ناشناخته',
+                       port: netloc[1].split(':')[1] || 'ناشناخته',
+                       id: netloc[0] || 'ناشناخته',
+                       remark: params.get('remarks') || '',
+                       totalData: parseDataStr(params.get('total')),
+                       remainingData: parseDataStr(params.get('remain')),
+                       expiry: parseTimestamp(params.get('expiry'))
+                   };
+               } catch (e) {
+                   throw new Error('خطا در پردازش لینک VLESS');
+               }
+           }
+           
+           function parseDataStr(dataStr) {
+               if (!dataStr) return null;
+               
+               if (typeof dataStr === 'number') return dataStr;
+               
+               try {
+                   if (dataStr.includes('GB')) {
+                       return parseFloat(dataStr.replace('GB', '')) * 1024;
+                   } else if (dataStr.includes('MB')) {
+                       return parseFloat(dataStr.replace('MB', ''));
+                   } else if (dataStr.includes('TB')) {
+                       return parseFloat(dataStr.replace('TB', '')) * 1024 * 1024;
+                   } else {
+                       return parseFloat(dataStr);
+                   }
+               } catch {
+                   return null;
+               }
+           }
+           
+           function parseTimestamp(ts) {
+               if (!ts) return null;
+               
+               try {
+                   if (typeof ts === 'number') {
+                       if (ts > 1e12) ts = ts / 1000; // میلی‌ثانیه به ثانیه
+                       return new Date(ts * 1000);
+                   } else {
+                       return new Date(ts);
+                   }
+               } catch {
+                   return null;
+               }
+           }
+           
+           function displayResults(config) {
+               const contentDiv = document.getElementById('resultContent');
+               
+               // ایجاد عناصر اطلاعات
+               addInfoItem('نوع', config.type);
+               addInfoItem('سرور', config.server);
+               addInfoItem('پورت', config.port);
+               
+               if (config.remark) {
+                   addInfoItem('توضیحات', config.remark);
+               }
+               
+               if (config.remainingData !== null) {
+                   const remainingGB = config.remainingData / 1024;
+                   const totalGB = config.totalData ? config.totalData / 1024 : null;
+                   
+                   if (totalGB) {
+                       const percent = (remainingGB / totalGB) * 100;
+                       addInfoItem('حجم باقیمانده', 
+                           `${remainingGB.toFixed(2)} GB از ${totalGB.toFixed(2)} GB (${percent.toFixed(1)}%)`);
+                   } else {
+                       addInfoItem('حجم باقیمانده', `${remainingGB.toFixed(2)} GB`);
+                   }
+               }
+               
+               if (config.expiry) {
+                   const now = new Date();
+                   const delta = config.expiry - now;
+                   
+                   if (delta > 0) {
+                       const days = Math.floor(delta / (1000 * 60 * 60 * 24));
+                       const hours = Math.floor((delta % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                       addInfoItem('زمان باقیمانده', `${days} روز و ${hours} ساعت`);
+                   } else {
+                       addInfoItem('وضعیت', '⚠ کانفیگ منقضی شده است!');
+                   }
+               }
+               
+               function addInfoItem(label, value) {
+                   const item = document.createElement('div');
+                   item.className = 'info-item';
+                   item.innerHTML = `<strong>${label}:</strong> ${value}`;
+                   contentDiv.appendChild(item);
+               }
+           }
+       </script>
+   </body>
+   </html>
